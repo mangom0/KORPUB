@@ -75,3 +75,7 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
 /Assets/PolygonNightclubs/
+
+/Assets/Animation/
+/Assets/Photon/
+/Assets/TextMesh Pro/

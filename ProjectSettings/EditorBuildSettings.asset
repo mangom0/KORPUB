@@ -5,9 +5,18 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
+  - enabled: 0
+    path: Assets/Scenes/Demo_DiveBar_01.unity
+    guid: eaa83d96d52dcc54f8d63fdf3ab71f1f
+  - enabled: 1
+    path: Assets/Scenes/IntroScene.unity
+    guid: 43dfe9303d8a76a4dac1ef3d0f51f74f
+  - enabled: 1
+    path: Assets/Scenes/MainScene.unity
+    guid: 5c82ed36529e8c6458aefb68c0069833
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
