@@ -1,89 +1,140 @@
 using UnityEngine;
 using Photon.Pun;
 using Photon.Realtime;
-using ExitGames.Client.Photon;
-
 using Hashtable = ExitGames.Client.Photon.Hashtable;
-using PhotonPlayer = Photon.Realtime.Player;
+using System.Collections.Generic;
 
 public class GameManager : MonoBehaviourPunCallbacks
 {
-    public static GameManager Instance;
+    [Header("Prefabs")]
+    [SerializeField] private string playerPrefabName = "Player";
 
-    [Header("Booth Seat Points")]
-    public Transform[] seatPoints;   // Seat_0 ~ Seat_n
+    [Header("Seat Positions")]
+    [SerializeField] private Transform[] seatPositions = new Transform[5];
+
+    private const string PROP_SEAT = "SeatIndex";
+    private bool spawnedLocal = false;
+    private bool requestedSeat = false;
 
     private void Awake()
     {
-        Instance = this;
+        Debug.Log("[GM] Awake");
     }
 
     private void Start()
     {
-        if (!PhotonNetwork.InRoom)
+        // â­ ì¤‘ìš”: ë©”ì¸ì”¬ì— ë“¤ì–´ì™”ì„ ë•Œ ì´ë¯¸ ë°©ì— ë“¤ì–´ê°€ ìˆëŠ” ìƒíƒœì¼ ìˆ˜ ìˆìŒ
+        TryRequestSeatIfInRoom();
+    }
+
+    private void TryRequestSeatIfInRoom()
+    {
+        if (requestedSeat) return;
+        if (!PhotonNetwork.IsConnected || !PhotonNetwork.InRoom) return;
+
+        if (photonView == null)
         {
-            Debug.LogWarning("[GameManager] Not in a room!");
+            Debug.LogError("[GM] PhotonViewê°€ ì—†ìŠµë‹ˆë‹¤. GameManagerì— PhotonView ì¶”ê°€í•˜ì„¸ìš”.");
             return;
         }
 
-        Debug.Log($"[GameManager] Start. Room={PhotonNetwork.CurrentRoom.Name}, " +
-                  $"Nick={PhotonNetwork.NickName}, IsMaster={PhotonNetwork.IsMasterClient}");
+        requestedSeat = true;
+        Debug.Log("[GM] InRoom already -> RequestSeat");
 
-        // ¸¶½ºÅÍ°¡ ÇöÀç ¹æ ÀÎ¿ø ±âÁØÀ¸·Î ÁÂ¼® ¹èÁ¤
-        if (PhotonNetwork.IsMasterClient)
-        {
-            AssignSeatsToPlayers();
-        }
-
-        // **¸ğµç Å¬¶óÀÌ¾ğÆ®°¡ ÀÚ±â Ä³¸¯ÅÍ¸¦ ÇÏ³ª¾¿ ¼ÒÈ¯**
-        SpawnLocalPlayer();
+        photonView.RPC(nameof(RPC_RequestSeat), RpcTarget.MasterClient, PhotonNetwork.LocalPlayer.ActorNumber);
     }
 
-    public override void OnPlayerEnteredRoom(PhotonPlayer newPlayer)
+    public override void OnJoinedRoom()
     {
-        // ´©±º°¡ »õ·Î µé¾î¿À¸é ¸¶½ºÅÍ°¡ ´Ù½Ã ÁÂ¼® Àç¹èÁ¤
-        if (PhotonNetwork.IsMasterClient)
-        {
-            AssignSeatsToPlayers();
-        }
+        // í˜¹ì‹œ GameManagerê°€ DontDestroyë¡œ ìœ ì§€ë˜ëŠ” êµ¬ì¡°ë„ ëŒ€ë¹„
+        TryRequestSeatIfInRoom();
     }
 
-    public override void OnPlayerLeftRoom(PhotonPlayer otherPlayer)
+    [PunRPC]
+    private void RPC_RequestSeat(int actorNumber)
     {
-        // ´©±º°¡ ³ª°¡¸é ¸¶½ºÅÍ°¡ ³²Àº »ç¶÷µé ±âÁØÀ¸·Î ´Ù½Ã ÁÂ¼® Àç¹èÁ¤
-        if (PhotonNetwork.IsMasterClient)
-        {
-            AssignSeatsToPlayers();
-        }
+        if (!PhotonNetwork.IsMasterClient) return;
+
+        Player p = PhotonNetwork.CurrentRoom?.GetPlayer(actorNumber);
+        if (p == null) return;
+
+        AssignSeatIfNeeded(p);
     }
 
-    void AssignSeatsToPlayers()
+    public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        PhotonPlayer[] players = PhotonNetwork.PlayerList;
-
-        Debug.Log($"[SeatAssign] start. players={players.Length}, seats={seatPoints.Length}");
-
-        for (int i = 0; i < players.Length && i < seatPoints.Length; i++)
-        {
-            PhotonPlayer p = players[i];
-
-            Hashtable hash = new Hashtable
-            {
-                ["seatIndex"] = i,
-                ["isBot"] = false
-            };
-
-            p.SetCustomProperties(hash);
-
-            Debug.Log($"[SeatAssign] {p.NickName} (Actor {p.ActorNumber}) -> seat {i}");
-        }
+        if (!PhotonNetwork.IsMasterClient) return;
+        AssignSeatIfNeeded(newPlayer);
     }
 
-    void SpawnLocalPlayer()
+    private void AssignSeatIfNeeded(Player p)
     {
-        Debug.Log($"[GameManager] SpawnLocalPlayer for {PhotonNetwork.NickName}");
+        if (p.CustomProperties != null && p.CustomProperties.ContainsKey(PROP_SEAT))
+            return;
 
-        // Resources ¾ÈÀÇ ÇÁ¸®ÆÕ ÀÌ¸§°ú Á¤È®È÷ ¸ÂÃç¾ß ÇÔ
-        PhotonNetwork.Instantiate("SM_Chr_Bartender_Female_01", Vector3.zero, Quaternion.identity);
+        int seat = FindFirstFreeSeat();
+        if (seat < 0)
+        {
+            Debug.LogError("[GM] ë¹ˆ ì¢Œì„ì´ ì—†ìŠµë‹ˆë‹¤.");
+            return;
+        }
+
+        var props = new Hashtable { { PROP_SEAT, seat } };
+        p.SetCustomProperties(props);
+    }
+
+    private int FindFirstFreeSeat()
+    {
+        HashSet<int> used = new HashSet<int>();
+
+        foreach (var p in PhotonNetwork.PlayerList)
+        {
+            if (p.CustomProperties != null && p.CustomProperties.ContainsKey(PROP_SEAT))
+                used.Add((int)p.CustomProperties[PROP_SEAT]);
+        }
+
+        for (int i = 0; i < seatPositions.Length; i++)
+        {
+            if (seatPositions[i] != null && !used.Contains(i))
+                return i;
+        }
+
+        return -1;
+    }
+
+    public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
+    {
+        if (targetPlayer != PhotonNetwork.LocalPlayer) return;
+        if (!changedProps.ContainsKey(PROP_SEAT)) return;
+        if (spawnedLocal) return;
+
+        int seatIndex = (int)changedProps[PROP_SEAT];
+        Debug.Log($"[GM] SeatIndex received: {seatIndex}");
+
+        SpawnLocalPlayerAtSeat(seatIndex);
+    }
+
+    private void SpawnLocalPlayerAtSeat(int seatIndex)
+    {
+        if (seatPositions == null || seatPositions.Length == 0)
+        {
+            Debug.LogError("[GM] seatPositions ë¹„ì–´ìˆìŒ");
+            return;
+        }
+
+        if (seatIndex < 0 || seatIndex >= seatPositions.Length || seatPositions[seatIndex] == null)
+        {
+            Debug.LogError($"[GM] seatPositions[{seatIndex}] ë¹„ì–´ìˆìŒ");
+            return;
+        }
+
+        Transform sp = seatPositions[seatIndex];
+
+        Debug.Log($"[GM] SpawnLocalPlayerAtSeat({seatIndex}) -> {playerPrefabName}");
+
+        GameObject obj = PhotonNetwork.Instantiate(playerPrefabName, sp.position, sp.rotation);
+        obj.transform.SetPositionAndRotation(sp.position, sp.rotation);
+
+        spawnedLocal = true;
     }
 }
